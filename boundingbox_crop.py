@@ -1,63 +1,58 @@
 import cv2
-import numpy as np
+import os
+import natsort
 
-# 전역 변수 설정
-drawing = False  # 마우스가 클릭된 상태 확인
-ix, iy = -1, -1  # 시작점 좌표
-image = None  # 원본 이미지
-image_copy = None  # 작업용 이미지 복사본
+## 사용법
+# 라벨 넘버 설정후 구동 하면 댐
+# c1 ~ c11 까지 자동으로 불러와지기 때문에 정해진 라벨만 설정 후 돌리면 파일명까지 c 별로 나눠져서 나옴
+# ROI 영역 그려준 후, enter키를 누르면 다음 이미지로 넘어가고 파일 저장이 된다.
 
-# 마우스 이벤트 콜백 함수
-def draw_rectangle(event, x, y, flags, param):
-    global ix, iy, drawing, image, image_copy
+label = "01"  # 01 ~ 11
+# 이미지가 저장된 폴더 경로 및 결과 저장 폴더 경로
+image_folder = '/data/boundingbox_crop/'  # 잘라낼 이미지가 있을 폴더 경로를 입력하세요
+output_folder = '/data/crop_image'  # 잘라낸 이미지를 저장할 폴더 경로를 입력하세요
 
-    if event == cv2.EVENT_LBUTTONDOWN:  # 왼쪽 마우스 버튼 클릭
-        drawing = True
-        ix, iy = x, y
-        image_copy = image.copy()
 
-    elif event == cv2.EVENT_MOUSEMOVE:  # 마우스 이동
-        if drawing:
-            image_copy = image.copy()
-            cv2.rectangle(image_copy, (ix, iy), (x, y), (0, 255, 0), 2)
 
-    elif event == cv2.EVENT_LBUTTONUP:  # 왼쪽 마우스 버튼 놓음
-        drawing = False
-        cv2.rectangle(image_copy, (ix, iy), (x, y), (0, 255, 0), 2)
+# 결과 저장 폴더가 없으면 생성
+if not os.path.exists(output_folder):
+    os.makedirs(output_folder)
 
-        # 바운딩 박스 영역 추출 (선 제외)
-        x1, y1 = min(ix, x), min(iy, y)
-        x2, y2 = max(ix, x), max(iy, y)
-        roi = image[y1:y2, x1:x2]
 
-        # 추출된 영역 저장
-        output_path = f"/workspace/cau_dataset/img/c1_01_{x1}.jpg"
-        cv2.imwrite(output_path, roi)
-        print(f"바운딩 박스 이미지가 {output_path}에 저장되었습니다.")
-        print(f"바운딩 박스 좌표: (x={x1}, y={y1}, width={x2-x1}, height={y2-y1})")
+# 폴더 내의 모든 이미지 파일에 대해 반복
+for f in natsort.natsorted(os.listdir(image_folder)):
+    cnt = 0
+    for filename in natsort.natsorted(os.listdir(image_folder + "/" + f)):
 
-# 메인 함수
-def main():
-    global image, image_copy
+        if filename.endswith(".jpg") or filename.endswith(".png") or filename.endswith(".jpeg"):  # 확장자 확인
+            # 이미지 파일 경로 설정
+            img_path = os.path.join(image_folder + "/" + f , filename)
 
-    # 이미지 로드
-    image_path = ""  # 이미지 경로
-    image = cv2.imread(image_path)
-    if image is None:
-        print("이미지를 불러올 수 없습니다.")
-        return
+            # 이미지 읽기
+            img = cv2.imread(img_path)
 
-    image_copy = image.copy()
-    cv2.namedWindow("image")
-    cv2.setMouseCallback("image", draw_rectangle)
+            if img is None:
+                print(f"이미지를 불러오는데 실패했습니다: {filename}")
+                continue
 
-    while True:
-        cv2.imshow("image", image_copy)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):  # 'q' 키를 누르면 종료
-            break
+            # 사용자가 ROI 영역 선택 (cv2.selectROI는 마우스 입력을 기다림)
+            roi = cv2.selectROI(img)
 
-    cv2.destroyAllWindows()
+            # ROI 영역에서 잘라내기
+            if roi is not None and roi != (0, 0, 0, 0):
+                x, y, w, h = roi
+                crop_img = img[int(y):int(y+h), int(x):int(x+w)]
 
-if __name__ == "__main__":
-    main()
+                # 잘라낸 이미지 저장
+                # 결과 저장 폴더가 없으면 생성
+                if not os.path.exists(output_folder + "/" + f):
+                    os.makedirs(output_folder + "/" + f)
+                cv2.imwrite(output_folder + "/" + f + "/c{}_{}_{}.jpg".format(str(int(f)), label, cnt), crop_img)
+                cnt = cnt+1
+
+                # print(f"{filename} 잘라내기 완료 -> {output_path}")
+            else:
+                print(f"{filename}에서 잘라낸 영역이 없습니다")
+
+            # ROI 선택 창을 닫음
+            cv2.destroyWindow("이미지를 클릭하고 드래그하여 ROI 영역을 선택하세요")
